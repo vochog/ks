@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>PDF Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='pdfjs/web/viewer.css') }}">
+    <script src="{{ url_for('static', filename='pdfjs/build/pdf.js') }}"></script>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #viewerContainer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="viewerContainer">
+        <div id="viewer" class="pdfViewer"></div>
+    </div>
+
+    <script>
+        const url = new URL(window.location.href);
+        const pdfUrl = url.searchParams.get('pdf_url');
+        const pageNumber = parseInt(url.searchParams.get('page'));
+        const keyword = url.searchParams.get('keyword'); // Get the keyword for highlighting
+
+        if (pdfUrl) {
+            // Set the workerSrc for PDF.js
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '{{ url_for("static", filename="pdfjs/build/pdf.worker.js") }}';
+
+            pdfjsLib.getDocument(pdfUrl).promise.then(function(pdfDoc) {
+                // Initial load: Go to the specified page
+                pdfDoc.getPage(pageNumber).then(function(page) {
+                    const scale = 1.5;
+                    const viewport = page.getViewport({ scale: scale });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    const renderContext = {
+                        canvasContext: context,
+                        viewport: viewport
+                    };
+                    page.render(renderContext).promise.then(function() {
+                        document.getElementById('viewer').appendChild(canvas);
+
+                        // Highlight text after rendering
+                        if (keyword) {
+                            page.getTextContent().then(function(textContent) {
+                                const textLayerDiv = document.createElement('div');
+                                textLayerDiv.className = 'textLayer';
+                                textLayerDiv.style.left = canvas.offsetLeft + 'px';
+                                textLayerDiv.style.top = canvas.offsetTop + 'px';
+                                textLayerDiv.style.height = canvas.height + 'px';
+                                textLayerDiv.style.width = canvas.width + 'px';
+                                document.getElementById('viewer').appendChild(textLayerDiv);
+
+                                // Use the built-in TextLayerBuilder for highlighting
+                                const textLayer = new TextLayerBuilder({
+                                    textLayerDiv: textLayerDiv,
+                                    pageIndex: page.pageNumber - 1,
+                                    viewport: viewport
+                                });
+                                textLayer.setTextContent(textContent);
+                                textLayer.render();
+
+                                // Custom highlighting logic for the specific keyword
+                                const keywordRegex = new RegExp(keyword, 'gi'); // Case-insensitive, global
+                                const textElements = textLayerDiv.querySelectorAll('span');
+                                let foundHighlight = false;
+
+                                textElements.forEach(span => {
+                                    if (span.textContent.match(keywordRegex)) {
+                                        span.innerHTML = span.textContent.replace(
+                                            keywordRegex,
+                                            (match) => `<span style="background-color: yellow; font-weight: bold;">${match}</span>`
+                                        );
+                                        if (!foundHighlight) {
+                                            span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                            foundHighlight = true;
+                                        }
+                                    }
+                                });
+                            });
+                        }
+                    });
+                });
+            }).catch(function(error) {
+                console.error('Error loading PDF:', error);
+                document.getElementById('viewer').textContent = 'Error loading PDF: ' + error.message;
+            });
+        } else {
+            document.getElementById('viewer').textContent = 'No PDF URL provided.';
+        }
+    </script>
+</body>
+</html>

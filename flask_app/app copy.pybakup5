@@ -1,0 +1,189 @@
+import os
+import json
+import requests
+from PyPDF2 import PdfReader
+from flask import Flask, request, jsonify, render_template, redirect, url_for, Response # Import Response
+import re
+from urllib.parse import quote_plus, urlparse, urlunparse
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)  # This enables CORS for all routes
+
+app.config['UPLOAD_FOLDER'] = 'downloads' # For temporarily storing PDFs
+app.config['SEARCH_RESULTS_FILE'] = 'output.json'
+
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Global variable to store search results for reporting
+search_results = []
+last_search_keywords = ""
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/process_pdfs', methods=['POST'])
+def process_pdfs():
+    global search_results # Declare as global to modify it
+    global last_search_keywords
+    data = request.get_json()
+    pdf_urls = data.get('pdf_urls', [])
+    search_keywords = request.args.get('keywords')
+
+    if not pdf_urls:
+        # Fallback for manual form submission if not JSON
+        pdf_urls_str = request.form.get('pdf_urls')
+        if pdf_urls_str:
+            pdf_urls = [url.strip() for url in pdf_urls_str.split(',') if url.strip()]
+        else:
+            return jsonify({"status": "error", "message": "No PDF URLs provided."}), 400
+
+
+    if not search_keywords:
+        search_keywords = request.form.get('keywords') # Get from form if direct submission
+        if not search_keywords:
+            return jsonify({"status": "error", "message": "No search keywords provided."}), 400
+
+    keywords = [k.strip().lower() for k in search_keywords.split(',')]
+
+    # Clear previous results
+    search_results = []
+    last_search_keywords = search_keywords
+
+    for pdf_url in pdf_urls:
+        try:
+            print(f"Processing PDF: {pdf_url}")
+            response = requests.get(pdf_url, stream=True, timeout=10)
+            response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+
+            # Sanitize filename for local storage
+            parsed_url = urlparse(pdf_url)
+            filename = os.path.basename(parsed_url.path)
+            if not filename:
+                filename = "downloaded_pdf.pdf"
+            local_pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+            with open(local_pdf_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            reader = PdfReader(local_pdf_path)
+            num_pages = len(reader.pages)
+            pdf_result = {
+                "pdf_url": pdf_url, # Store the original PDF URL
+                "file_name": filename,
+                "matches": []
+            }
+
+            for page_num in range(num_pages):
+                page = reader.pages[page_num]
+                text = page.extract_text()
+                if text:
+                    text = re.sub(r'\s+', ' ', text)
+                    for keyword in keywords:
+                        pattern = r'\b' + re.escape(keyword) + r'\b'
+                        for match in re.finditer(pattern, text, re.IGNORECASE):
+                            # Get a snippet of context around the match
+                            start = max(0, match.start() - 40)
+                            end = min(len(text), match.end() + 40)
+                            paragraph = text[start:end].replace('\n', ' ').strip()
+                            highlighted_paragraph = re.sub(
+                                pattern,
+                                lambda m: f"<strong>{m.group(0)}</strong>",
+                                paragraph,
+                                flags=re.IGNORECASE
+                            )
+                            pdf_result["matches"].append({
+                                "keyword": keyword,
+                                "paragraph": paragraph,
+                                "highlighted_paragraph": highlighted_paragraph,
+                                "page_number": page_num + 1
+                            })
+                            break # Stop after first match in line
+            if pdf_result["matches"]:
+                search_results.append(pdf_result)
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading or processing {pdf_url}: {e}")
+            search_results.append({"pdf_url": pdf_url, "error": str(e)})
+        except Exception as e:
+            print(f"An unexpected error occurred for {pdf_url}: {e}")
+            search_results.append({"pdf_url": pdf_url, "error": f"Processing error: {e}"})
+
+    with open(app.config['SEARCH_RESULTS_FILE'], 'w', encoding='utf-8') as f:
+        json.dump(search_results, f, ensure_ascii=False, indent=4)
+
+    return jsonify({"status": "success", "message": "PDFs processed.", "redirect_url": url_for('show_results')})
+
+
+@app.route('/results')
+def show_results():
+    global search_results
+    # return render_template('search_results.html', results=search_results)
+    return render_template('search_results.html', results=search_results, search_keywords=last_search_keywords)
+
+# --- CORR  TED PROXY ROUTE ---
+# Change the route definition to accept a 'url' query parameter
+@app.route('/proxy_pdf')
+def proxy_pdf():
+    full_pdf_url = request.args.get('url')
+    if not full_pdf_url:
+        return "PDF URL not provided.", 400
+
+    try:
+        print(f"Proxying PDF: {full_pdf_url}")
+        response = requests.get(full_pdf_url, stream=True, timeout=30)
+        response.raise_for_status()
+
+        content_type = response.headers.get('Content-Type', 'application/pdf')
+        content_disposition = response.headers.get('Content-Disposition')
+
+        # Use an iterator to stream the content
+        def generate():
+            for chunk in response.iter_content(chunk_size=8192):
+                yield chunk
+
+        # Build headers for the response
+        headers = {
+            'Content-Type': content_type
+        }
+        if content_disposition:
+            headers['Content-Disposition'] = content_disposition
+        else:
+            # Fallback to inline if no disposition is provided by the source
+            filename = os.path.basename(urlparse(full_pdf_url).path) or "document.pdf"
+            headers['Content-Disposition'] = f'inline; filename="{filename}"'
+
+        return Response(generate(), mimetype=content_type, headers=headers)
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching PDF from {full_pdf_url}: {e}")
+        return f"Error fetching PDF: {e}", 500
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}", e)
+        return "An unexpected server error occurred.", 500
+
+
+# @app.route('/viewer')
+# def viewer():
+#     original_pdf_url = request.args.get('pdf_url')
+#     page = request.args.get('page')
+#     keyword = request.args.get('keyword')
+
+#     # Pass the original_pdf_url as a 'url' query parameter to the proxy_pdf endpoint
+#     # _external=True ensures the full URL is built, which is good for client-side use
+#     proxied_pdf_url = url_for('proxy_pdf', url=original_pdf_url, _external=True)
+
+#     return render_template('viewer.html', pdf_url=proxied_pdf_url, page=page, keyword=keyword)
+
+@app.route('/viewer')
+def viewer():
+    original_pdf_url = request.args.get('pdf_url')
+    page = request.args.get('page')
+    keyword = request.args.get('keyword')
+    proxy_url = url_for('proxy_pdf', url=original_pdf_url)
+    return render_template('viewer.html', pdf_url=proxy_url, page=page, keyword=keyword)
+
+if __name__ == '__main__':
+    app.run(debug=True)

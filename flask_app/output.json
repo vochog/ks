@@ -1,0 +1,14 @@
+[
+    {
+        "pdf_url": "https://www.adobe.com/support/products/enterprise/knowledgecenter/media/c4611_sample_explain.pdf",
+        "file_name": "c4611_sample_explain.pdf",
+        "matches": [
+            {
+                "keyword": "accelio",
+                "paragraph": "MPLE Sample Date: Prepared by: May 2001 Accelio Present Applied Technology Created and",
+                "highlighted_paragraph": "MPLE Sample Date: Prepared by: May 2001 <strong>Accelio</strong> Present Applied Technology Created and",
+                "page_number": 1
+            }
+        ]
+    }
+]

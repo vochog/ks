@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Results</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Search Results</h1>
+        {% if results %}
+            {% for pdf_result in results %}
+                <div class="pdf-card">
+                    <h2><a href="{{ pdf_result.pdf_url }}" target="_blank">{{ pdf_result.file_name }}</a></h2>
+                    {% if pdf_result.error %}
+                        <p class="error">Error processing this PDF: {{ pdf_result.error }}</p>
+                    {% elif not pdf_result.matches %}
+                        <p>No keywords found in this PDF.</p>
+                    {% else %}
+                        <ul>
+                            {% for match in pdf_result.matches %}
+                                <li>
+                                    <strong>Keyword:</strong> {{ match.keyword }}<br>
+                                    <strong>Context:</strong> <span class="highlighted-text">{{ match.highlighted_paragraph | safe }}</span><br>
+                                    <strong>Page:</strong> {{ match.page_number }}
+                                    <a href="{{ url_for('viewer', pdf_url=pdf_result.pdf_url, page=match.page_number, keyword=match.keyword) }}" target="_blank" class="view-link">View PDF at Page {{ match.page_number }}</a>
+                                    <!-- <a href="{{ url_for('viewer', pdf_url=pdf_result.pdf_url, page=match.page, keyword=keyword) }}" target="_blank">View PDF at page {{ match.page }}</a> -->
+                                    <!-- <a href="{{ url_for('viewer', pdf_url=pdf_result.pdf_url, page=match.page_number, keyword=search_keywords) }}" target="_blank" class="view-link">View PDF at Page {{ match.page_number }}</a> -->
+                                    <!-- <a href="{{ url_for('viewer', pdf_url=pdf_result.pdf_url, page=match.page_number, keyword=match.keyword) }}" target="_blank" class="view-link">View PDF at Page {{ match.page_number }}</a> -->
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No search results found. Please scan PDFs or submit URLs from the <a href="{{ url_for('index') }}">main page</a>.</p>
+        {% endif %}
+        <p><a href="{{ url_for('index') }}">Back to Home</a></p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>PDF Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='pdfjs/web/viewer.css') }}">
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #viewerContainer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: auto;
+        }
+        .textLayer {
+            z-index: 1;
+            color: transparent;
+            pointer-events: none;
+            font-family: var(--viewer-font);
+            text-rendering: optimizeLegibility;
+        }
+        .textLayer > span {
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+        }
+    </style>
+</head>
+<body>
+<script>
+  window.PDF_VIEWER_CONFIG = {
+    pdfUrl: {{ pdf_url|tojson }},
+    pageNumber: {{ (page or 1)|tojson }},
+    keyword: {{ (keyword or '')|tojson }}
+  };
+</script>
+<div id="viewerContainer">
+    <div id="viewer" class="pdfViewer"></div>
+</div>
+<script type="module">
+  import * as pdfjsLib from '{{ url_for("static", filename="pdfjs/build/pdf.mjs") }}';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '{{ url_for("static", filename="pdfjs/build/pdf.worker.mjs") }}';
+
+  const { pdfUrl, pageNumber, keyword } = window.PDF_VIEWER_CONFIG;
+
+  if (pdfUrl) {
+    pdfjsLib.getDocument(pdfUrl).promise.then(function(pdfDoc) {
+      pdfDoc.getPage(pageNumber).then(function(page) {
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale: scale });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport
+        };
+        page.render(renderContext).promise.then(function() {
+          document.getElementById('viewer').appendChild(canvas);
+
+          if (keyword && keyword.trim()) {
+            page.getTextContent().then(function(textContent) {
+              const textLayerDiv = document.createElement('div');
+              textLayerDiv.className = 'textLayer';
+              textLayerDiv.style.position = 'absolute';
+              textLayerDiv.style.left = canvas.offsetLeft + 'px';
+              textLayerDiv.style.top = canvas.offsetTop + 'px';
+              textLayerDiv.style.height = canvas.height + 'px';
+              textLayerDiv.style.width = canvas.width + 'px';
+              document.getElementById('viewer').appendChild(textLayerDiv);
+
+              if (pdfjsLib.TextLayerBuilder) {
+                const textLayer = new pdfjsLib.TextLayerBuilder({
+                  textLayerDiv: textLayerDiv,
+                  pageIndex: page.pageNumber - 1,
+                  viewport: viewport
+                });
+                textLayer.setTextContent(textContent);
+                textLayer.render();
+
+                // Support multiple keywords (comma-separated)
+                const keywords = keyword.split(',').map(k => k.trim()).filter(Boolean);
+                if (keywords.length > 0) {
+                  const keywordRegex = new RegExp(keywords.join('|'), 'gi');
+                  const textElements = textLayerDiv.querySelectorAll('span');
+                  let foundHighlight = false;
+
+                  textElements.forEach(span => {
+                    if (span.textContent.match(keywordRegex)) {
+                      span.innerHTML = span.textContent.replace(
+                        keywordRegex,
+                        (match) => `<span style="background-color: yellow; color: black; font-weight: bold;">${match}</span>`
+                      );
+                      if (!foundHighlight) {
+                        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        foundHighlight = true;
+                      }
+                    }
+                  });
+                }
+              } else {
+                console.warn("pdfjsLib.TextLayerBuilder not found. Highlighting might not work as expected.");
+              }
+            });
+          }
+        });
+      });
+    }).catch(function(error) {
+      console.error('Error loading PDF:', error);
+      document.getElementById('viewer').textContent = 'Error loading PDF: ' + error.message;
+    });
+  } else {
+    document.getElementById('viewer').textContent = 'No PDF URL provided.';
+  }
+</script>
+</body>
+</html>

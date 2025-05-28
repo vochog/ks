@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>PDF Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='pdfjs/web/viewer.css') }}">
+    <script type="module">
+        // Import the pdfjsLib object from the pdf.mjs module
+        // The path must be correct relative to your static files serving
+        import * as pdfjsLib from '{{ url_for("static", filename="pdfjs/build/pdf.mjs") }}';
+
+        // Set the workerSrc for PDF.js, pointing to the .mjs worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '{{ url_for("static", filename="pdfjs/build/pdf.worker.mjs") }}';
+
+        // All subsequent PDF.js related code must be INSIDE this <script type="module"> block
+        // or in another .mjs file imported here.
+        // You'll need to move the existing viewer logic into this block.
+
+        const url = new URL(window.location.href);
+        const pdfUrl = url.searchParams.get('pdf_url');
+        const pageNumber = parseInt(url.searchParams.get('page'));
+        const keyword = url.searchParams.get('keyword');
+
+        if (pdfUrl) {
+            pdfjsLib.getDocument(pdfUrl).promise.then(function(pdfDoc) {
+                pdfDoc.getPage(pageNumber).then(function(page) {
+                    const scale = 1.5;
+                    const viewport = page.getViewport({ scale: scale });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    const renderContext = {
+                        canvasContext: context,
+                        viewport: viewport
+                    };
+                    page.render(renderContext).promise.then(function() {
+                        document.getElementById('viewer').appendChild(canvas);
+
+                        if (keyword) {
+                            page.getTextContent().then(function(textContent) {
+                                const textLayerDiv = document.createElement('div');
+                                textLayerDiv.className = 'textLayer';
+                                // Positioning of textLayerDiv relative to canvas
+                                textLayerDiv.style.position = 'absolute';
+                                textLayerDiv.style.left = canvas.offsetLeft + 'px';
+                                textLayerDiv.style.top = canvas.offsetTop + 'px';
+                                textLayerDiv.style.height = canvas.height + 'px';
+                                textLayerDiv.style.width = canvas.width + 'px';
+                                // Add textLayerDiv to the same parent as canvas, or a specific container
+                                document.getElementById('viewer').appendChild(textLayerDiv);
+
+                                // IMPORTANT: TextLayerBuilder is part of PDF.js viewer.js.
+                                // If you are using the slim build, it might not be available directly.
+                                // If pdfjsLib.TextLayerBuilder is not defined, you'll need to include
+                                // the appropriate PDF.js `web/viewer.mjs` (or `web/viewer.js`)
+                                // as a module as well, or integrate its functionality.
+                                // For simplicity, let's assume it's available or you've added it.
+                                if (pdfjsLib.TextLayerBuilder) {
+                                    const textLayer = new pdfjsLib.TextLayerBuilder({ // Use pdfjsLib.TextLayerBuilder
+                                        textLayerDiv: textLayerDiv,
+                                        pageIndex: page.pageNumber - 1,
+                                        viewport: viewport
+                                    });
+                                    textLayer.setTextContent(textContent);
+                                    textLayer.render();
+
+                                    const keywordRegex = new RegExp(keyword, 'gi');
+                                    const textElements = textLayerDiv.querySelectorAll('span');
+                                    let foundHighlight = false;
+
+                                    textElements.forEach(span => {
+                                        if (span.textContent.match(keywordRegex)) {
+                                            span.innerHTML = span.textContent.replace(
+                                                keywordRegex,
+                                                (match) => `<span style="background-color: yellow; font-weight: bold;">${match}</span>`
+                                            );
+                                            if (!foundHighlight) {
+                                                span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                foundHighlight = true;
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    console.warn("pdfjsLib.TextLayerBuilder not found. Highlighting might not work as expected.");
+                                    // Fallback or simpler highlighting if TextLayerBuilder isn't present
+                                    // You might just do a basic text search on the canvas text content
+                                    // which is harder to highlight visually.
+                                }
+                            });
+                        }
+                    });
+                });
+            }).catch(function(error) {
+                console.error('Error loading PDF:', error);
+                document.getElementById('viewer').textContent = 'Error loading PDF: ' + error.message;
+            });
+        } else {
+            document.getElementById('viewer').textContent = 'No PDF URL provided.';
+        }
+    </script>
+    <script>
+        // Example: using PDF.js's open() method
+        if (window.PDFViewerApplication) {
+            PDFViewerApplication.open("{{ pdf_url }}");
+        }
+    </script>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #viewerContainer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: auto;
+        }
+        /* Style for the text layer which overlays the canvas */
+        .textLayer {
+            z-index: 1; /* Ensure text layer is above the canvas */
+            color: transparent; /* Make original text invisible */
+            pointer-events: none; /* Allow clicks to pass through to the canvas */
+            font-family: var(--viewer-font); /* Inherit font from viewer CSS */
+            text-rendering: optimizeLegibility; /* Improve text rendering */
+        }
+        .textLayer > span {
+            position: absolute;
+            white-space: pre;
+            cursor: text; /* Allow text selection */
+            /* You might need to adjust font-size and line-height here
+               to precisely match the rendered PDF text */
+        }
+    </style>
+</head>
+<body>
+    <div id="viewerContainer">
+        <div id="viewer" class="pdfViewer"></div>
+    </div>
+</body>
+</html>

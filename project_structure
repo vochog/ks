@@ -1,0 +1,26 @@
+pdf_search_app/
+├── browser_extension/
+│   ├── manifest.json
+│   ├── background.js
+│   ├── popup.html
+│   ├── popup.js
+├── flask_app/
+│   ├── app.py
+│   ├── templates/
+│   │   ├── index.html
+│   │   ├── search_results.html
+│   │   ├── viewer.html
+│   ├── static/
+│   │   ├── css/
+│   │   │   └── style.css
+│   │   ├── js/
+│   │   │   └── viewer.js
+│   │   └── pdfjs/  (Download PDF.js here)
+│   │       ├── build/
+│   │       │   ├── pdf.js
+│   │       │   └── pdf.worker.js
+│   │       └── web/
+│   │           ├── viewer.html
+│   │           └── viewer.js
+│   ├── output.json
+│   ├── requirements.txt

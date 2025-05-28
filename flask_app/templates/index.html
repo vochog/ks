@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Search App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to the PDF Search App</h1>
+        <p>Use the browser extension to scan for open PDF tabs and send their URLs here.</p>
+        <p>Alternatively, you can provide PDF URLs and keywords manually:</p>
+        <form action="/process_pdfs" method="post" id="manualSearchForm">
+            <label for="pdf_urls">PDF URLs (comma-separated):</label>
+            <textarea id="pdf_urls" name="pdf_urls" rows="5" placeholder="Enter PDF URLs, e.g., http://example.com/doc1.pdf, http://example.com/doc2.pdf"></textarea>
+            <label for="keywords">Keywords (comma-separated):</label>
+            <input type="text" id="keywords" name="keywords" placeholder="e.g., python, flask, data">
+            <button type="submit">Search Manual PDFs</button>
+        </form>
+        <div id="manualStatus"></div>
+    </div>
+
+    <script>
+        document.getElementById('manualSearchForm').addEventListener('submit', function(event) {
+            event.preventDefault(); // Prevent default form submission
+            const form = event.target;
+            const pdfUrlsInput = document.getElementById('pdf_urls');
+            const keywordsInput = document.getElementById('keywords');
+            const manualStatusDiv = document.getElementById('manualStatus');
+
+            const pdfUrls = pdfUrlsInput.value.split(',').map(url => url.trim()).filter(url => url !== '');
+            const keywords = keywordsInput.value.trim();
+
+            if (pdfUrls.length === 0) {
+                manualStatusDiv.textContent = 'Please enter at least one PDF URL.';
+                manualStatusDiv.style.color = 'red';
+                return;
+            }
+            if (!keywords) {
+                manualStatusDiv.textContent = 'Please enter search keywords.';
+                manualStatusDiv.style.color = 'red';
+                return;
+            }
+
+            manualStatusDiv.textContent = 'Processing...';
+            manualStatusDiv.style.color = 'green';
+
+            fetch(form.action + `?keywords=${encodeURIComponent(keywords)}`, { // Pass keywords as query param
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ pdf_urls: pdfUrls })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    manualStatusDiv.textContent = 'Success! Redirecting to results...';
+                    window.location.href = data.redirect_url;
+                } else {
+                    manualStatusDiv.textContent = `Error: ${data.message}`;
+                    manualStatusDiv.style.color = 'red';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                manualStatusDiv.textContent = `Network error: ${error.message}`;
+                manualStatusDiv.style.color = 'red';
+            });
+        });
+    </script>
+</body>
+</html>

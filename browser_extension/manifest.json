@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "PDF Tab Scanner",
+  "version": "1.0",
+  "description": "Scans for open PDF tabs and sends URLs to a Flask app.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
